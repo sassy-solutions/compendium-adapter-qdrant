@@ -5,9 +5,11 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Compendium.Abstractions.VectorStore;
 using Compendium.Adapters.Qdrant.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Compendium.Adapters.Qdrant.DependencyInjection;
 
@@ -17,12 +19,13 @@ namespace Compendium.Adapters.Qdrant.DependencyInjection;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="QdrantAdapter"/> and its options.
+    /// Registers <see cref="QdrantVectorStore"/> as <see cref="IVectorStore"/> bound to
+    /// <see cref="QdrantOptions.SectionName"/>.
     /// </summary>
     /// <param name="services">DI container.</param>
     /// <param name="configuration">Source configuration; section <see cref="QdrantOptions.SectionName"/> is bound.</param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddCompendiumQdrantAdapter(
+    public static IServiceCollection AddCompendiumQdrant(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -34,18 +37,18 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddSingleton<QdrantAdapter>();
-
+        RegisterStore(services);
         return services;
     }
 
     /// <summary>
-    /// Registers <see cref="QdrantAdapter"/> with an inline configuration callback.
+    /// Registers <see cref="QdrantVectorStore"/> as <see cref="IVectorStore"/> with an inline
+    /// configuration callback.
     /// </summary>
     /// <param name="services">DI container.</param>
     /// <param name="configure">Callback to mutate <see cref="QdrantOptions"/>.</param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddCompendiumQdrantAdapter(
+    public static IServiceCollection AddCompendiumQdrant(
         this IServiceCollection services,
         Action<QdrantOptions> configure)
     {
@@ -57,8 +60,27 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddSingleton<QdrantAdapter>();
-
+        RegisterStore(services);
         return services;
+    }
+
+    private static void RegisterStore(IServiceCollection services)
+    {
+        services.AddHttpClient<QdrantVectorStore>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+            if (!string.IsNullOrWhiteSpace(options.BaseUrl))
+            {
+                client.BaseAddress = new Uri(options.BaseUrl, UriKind.Absolute);
+            }
+
+            client.Timeout = options.Timeout;
+            if (!string.IsNullOrEmpty(options.ApiKey))
+            {
+                client.DefaultRequestHeaders.Add("api-key", options.ApiKey);
+            }
+        });
+
+        services.AddSingleton<IVectorStore>(sp => sp.GetRequiredService<QdrantVectorStore>());
     }
 }

@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -9,6 +9,14 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Compendium.Adapters.Qdrant", "src\Compendium.Adapters.Qdrant\Compendium.Adapters.Qdrant.csproj", "{A1A1A1A1-0000-0000-0000-000000000001}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Compendium.Adapters.Qdrant.Tests", "tests\Unit\Compendium.Adapters.Qdrant.Tests\Compendium.Adapters.Qdrant.Tests.csproj", "{A1A1A1A1-0000-0000-0000-000000000002}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Integration", "Integration", "{95350B48-DEA1-4AA3-8B50-85FA941D7D45}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Compendium.Adapters.Qdrant.IntegrationTests", "tests\Integration\Compendium.Adapters.Qdrant.IntegrationTests\Compendium.Adapters.Qdrant.IntegrationTests.csproj", "{789A4CB3-CE3E-4ED2-9B50-ABF61014C181}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{812C145B-F6C7-435B-97F7-F1D6308B8585}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "01-rag-roundtrip", "samples\01-rag-roundtrip\01-rag-roundtrip.csproj", "{0687ECF5-D2D2-416D-BEAE-43F836A62A1C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -24,9 +32,20 @@ Global
 		{A1A1A1A1-0000-0000-0000-000000000002}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A1A1A1A1-0000-0000-0000-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A1A1A1A1-0000-0000-0000-000000000002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{789A4CB3-CE3E-4ED2-9B50-ABF61014C181}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{789A4CB3-CE3E-4ED2-9B50-ABF61014C181}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{789A4CB3-CE3E-4ED2-9B50-ABF61014C181}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{789A4CB3-CE3E-4ED2-9B50-ABF61014C181}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0687ECF5-D2D2-416D-BEAE-43F836A62A1C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0687ECF5-D2D2-416D-BEAE-43F836A62A1C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0687ECF5-D2D2-416D-BEAE-43F836A62A1C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0687ECF5-D2D2-416D-BEAE-43F836A62A1C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{A1A1A1A1-0000-0000-0000-000000000001} = {D6C5C0A8-4A5A-4A5A-9C4A-1F4A4F4F4F01}
 		{A1A1A1A1-0000-0000-0000-000000000002} = {D6C5C0A8-4A5A-4A5A-9C4A-1F4A4F4F4F02}
+		{95350B48-DEA1-4AA3-8B50-85FA941D7D45} = {D6C5C0A8-4A5A-4A5A-9C4A-1F4A4F4F4F02}
+		{789A4CB3-CE3E-4ED2-9B50-ABF61014C181} = {95350B48-DEA1-4AA3-8B50-85FA941D7D45}
+		{0687ECF5-D2D2-416D-BEAE-43F836A62A1C} = {812C145B-F6C7-435B-97F7-F1D6308B8585}
 	EndGlobalSection
 EndGlobal

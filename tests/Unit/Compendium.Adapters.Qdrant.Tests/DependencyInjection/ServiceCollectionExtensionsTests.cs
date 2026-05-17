@@ -5,17 +5,23 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Compendium.Abstractions.VectorStore;
 using Compendium.Adapters.Qdrant.DependencyInjection;
 using Compendium.Adapters.Qdrant.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Compendium.Adapters.Qdrant.Tests.DependencyInjection;
 
+/// <summary>
+/// DI registration semantics for the Qdrant adapter — verifies binding,
+/// IVectorStore resolution, and null-argument guards.
+/// </summary>
 public class ServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddCompendiumQdrantAdapter_WithConfiguration_RegistersAdapterAndOptions()
+    public void AddCompendiumQdrant_WithConfiguration_BindsAndRegistersIVectorStore()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -23,47 +29,89 @@ public class ServiceCollectionExtensionsTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Compendium:Adapters:Qdrant:BaseUrl"] = "https://api.example.com",
+                ["Compendium:Adapters:Qdrant:BaseUrl"] = "https://qdrant.example.com",
                 ["Compendium:Adapters:Qdrant:ApiKey"] = "k1",
             })
             .Build();
 
         // Act
-        var actual = services.AddCompendiumQdrantAdapter(configuration);
+        var actual = services.AddCompendiumQdrant(configuration);
         var sp = actual.BuildServiceProvider();
 
         // Assert
         actual.Should().BeSameAs(services);
-        sp.GetRequiredService<QdrantAdapter>().Should().NotBeNull();
+        sp.GetRequiredService<IVectorStore>().Should().BeOfType<QdrantVectorStore>();
+        sp.GetRequiredService<IOptions<QdrantOptions>>().Value.BaseUrl
+            .Should().Be("https://qdrant.example.com");
     }
 
     [Fact]
-    public void AddCompendiumQdrantAdapter_WithCallback_RegistersAdapterAndOptions()
+    public void AddCompendiumQdrant_WithCallback_RegistersIVectorStore()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
 
         // Act
-        services.AddCompendiumQdrantAdapter(o =>
+        services.AddCompendiumQdrant(o =>
         {
-            o.BaseUrl = "https://api.example.com";
+            o.BaseUrl = "https://qdrant.example.com";
             o.ApiKey = "k1";
         });
         var sp = services.BuildServiceProvider();
 
         // Assert
-        sp.GetRequiredService<QdrantAdapter>().Should().NotBeNull();
+        sp.GetRequiredService<IVectorStore>().Should().BeOfType<QdrantVectorStore>();
     }
 
     [Fact]
-    public void AddCompendiumQdrantAdapter_NullServices_Throws()
+    public void AddCompendiumQdrant_NullServicesWithConfiguration_Throws()
+    {
+        // Arrange
+        IServiceCollection? services = null;
+        var configuration = new ConfigurationBuilder().Build();
+
+        // Act
+        var act = () => services!.AddCompendiumQdrant(configuration);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddCompendiumQdrant_NullServicesWithCallback_Throws()
     {
         // Arrange
         IServiceCollection? services = null;
 
         // Act
-        var act = () => services!.AddCompendiumQdrantAdapter(_ => { });
+        var act = () => services!.AddCompendiumQdrant(_ => { });
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddCompendiumQdrant_NullConfiguration_Throws()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddCompendiumQdrant((IConfiguration)null!);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddCompendiumQdrant_NullCallback_Throws()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddCompendiumQdrant((Action<QdrantOptions>)null!);
 
         // Assert
         act.Should().Throw<ArgumentNullException>();
