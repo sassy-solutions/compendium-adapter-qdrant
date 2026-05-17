@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <AssemblyName>Compendium.Adapters.Sample</AssemblyName>
-    <RootNamespace>Compendium.Adapters.Sample</RootNamespace>
-    <Description>Compendium adapter for Sample (placeholder — replace with real vendor description).</Description>
-    <PackageTags>compendium;adapter;sample</PackageTags>
+    <AssemblyName>Compendium.Adapters.Qdrant</AssemblyName>
+    <RootNamespace>Compendium.Adapters.Qdrant</RootNamespace>
+    <Description>Compendium adapter for Qdrant (placeholder — replace with real vendor description).</Description>
+    <PackageTags>compendium;adapter;qdrant</PackageTags>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
