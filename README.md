@@ -1,118 +1,138 @@
-# `template-compendium-adapter-dotnet`
+# `compendium-adapter-qdrant`
 
-Starter for a new **Compendium** adapter (.NET 9, single-vendor, lives in its own repository).
+Qdrant adapter for the [Compendium](https://github.com/sassy-solutions/compendium) framework. Implements `IVectorStore` from `Compendium.Abstractions.VectorStore` over the [Qdrant](https://qdrant.tech) REST API via a hand-rolled `HttpClient` — no vendor SDK, works against both self-hosted and Qdrant Cloud.
 
-Aligns with [ADR 0006](../../docs/adr/0006-multi-repo-adapter-split.md) (split heavy adapters into per-adapter repositories). Encodes the [`compendium-test-author`](.claude/skills/compendium-test-author/SKILL.md) skill so `/tests` and `/coverage` work out of the box.
+Built from [`template-compendium-adapter-dotnet`](https://github.com/sassy-solutions/template-compendium-adapter-dotnet). Companion to [`compendium-adapter-pgvector`](https://github.com/sassy-solutions/compendium-adapter-pgvector) — same abstraction, same tenant isolation posture, same Result-pattern error handling.
 
-## What you get
+## What's in this package
 
-```
-.
-├── src/Compendium.Adapters.Qdrant/        — the adapter project (rename Qdrant → <Vendor>)
-│   ├── DependencyInjection/
-│   │   └── ServiceCollectionExtensions.cs
-│   ├── Options/QdrantOptions.cs
-│   └── QdrantAdapter.cs                   — illustrates the IAdapter (or any port) shape
-├── tests/Unit/Compendium.Adapters.Qdrant.Tests/
-│   ├── DependencyInjection/ServiceCollectionExtensionsTests.cs
-│   ├── Options/QdrantOptionsTests.cs
-│   └── GlobalUsings.cs
-├── .github/workflows/ci.yml               — build + test + 90% coverage gate
-├── .claude/skills/compendium-test-author/SKILL.md
-├── .claude/commands/{tests,coverage}.md
-├── .config/dotnet-tools.json              — pins ReportGenerator
-├── Directory.Build.props
-├── Directory.Packages.props               — central package management
-├── Compendium.Adapters.Qdrant.sln
-├── global.json                            — pins .NET 9 SDK
-└── LICENSE
+| Component | Implements | Purpose |
+|---|---|---|
+| `QdrantVectorStore` | `IVectorStore` | Embedding storage + ANN similarity search, JSON payload metadata, tenant isolation |
+| `QdrantOptions` | — | Base URL / API key / index-tuning configuration |
+| `TenantIdentifier` | — | Validates tenant ids against a strict alphanumeric+dash+underscore regex before any wire bind |
+| `ServiceCollectionExtensions` | — | DI helpers (`AddCompendiumQdrant(...)`) |
+
+## Install
+
+```bash
+dotnet add package Compendium.Adapters.Qdrant
 ```
 
-## Conventions enforced (copy from Compendium framework)
+## Quick start
+
+```csharp
+using Compendium.Abstractions.VectorStore;
+using Compendium.Abstractions.VectorStore.Models;
+using Compendium.Adapters.Qdrant.DependencyInjection;
+
+services.AddCompendiumQdrant(o =>
+{
+    o.BaseUrl = "http://localhost:6333";
+    o.ApiKey  = builder.Configuration["Qdrant:ApiKey"];   // optional, required for cloud
+});
+
+// IVectorStore is now resolvable from DI.
+var store = services.BuildServiceProvider().GetRequiredService<IVectorStore>();
+await store.EnsureCollectionAsync("documents", dimension: 1536, DistanceMetric.Cosine);
+await store.UpsertAsync("documents", new[]
+{
+    new VectorRecord("doc-1", embedding, metadata, tenantId: "tenant-1"),
+});
+
+var matches = await store.SearchAsync(
+    "documents",
+    queryEmbedding,
+    topK: 5,
+    VectorFilter.Eq("category", "support").ForTenant("tenant-1"));
+```
+
+A runnable example lives under [`samples/01-rag-roundtrip`](samples/01-rag-roundtrip/Program.cs).
+
+## Configuration options
+
+Bind to the `Compendium:Adapters:Qdrant` section, or pass an inline callback.
+
+| Option | Default | Purpose |
+|---|---|---|
+| `BaseUrl` | `http://localhost:6333` | Qdrant base URL. For Qdrant Cloud, use the cluster URL. |
+| `ApiKey` | _(null)_ | Optional API key sent in the `api-key` header. Required for Qdrant Cloud, optional for self-hosted dev. |
+| `CollectionPrefix` | _(empty)_ | Prefix applied to every collection name on the wire (e.g. `dev_`, `staging_`). |
+| `DefaultIndex` | `Hnsw` | ANN index built on collection creation (currently only HNSW). |
+| `HnswM` | `16` | HNSW graph degree. |
+| `HnswEfConstruct` | `128` | HNSW build-time candidate-list size. |
+| `WaitForUpsert` | `true` | Whether writes should wait for Qdrant to confirm (`wait=true` query string). |
+| `Timeout` | `30s` | Per-request HTTP timeout. |
+
+## Tenancy
+
+Qdrant supports payload-based multi-tenancy. Every record's optional `TenantId` is written as a reserved payload field (`tenant_id`), and every search filter we emit includes a `must` clause on that field.
+
+- **Upsert**: the tenant id is stored alongside metadata; invalid ids (anything outside `[a-zA-Z0-9_-]{1,255}`) are rejected before serialisation.
+- **Search**: when a `VectorFilter.ForTenant(...)` scope is supplied, results are restricted to that tenant. With no tenant supplied, the adapter emits a `must_not` clause that excludes any point carrying a tenant id (effectively restricting to "untagged" / shared records).
+- **Delete**: id-list deletes with no tenant simply pass the ids; with a tenant, they emit a `must` filter requiring `tenant_id = X AND id ∈ ids`. There is no "delete across tenants" overload.
+
+The `TenantIdentifier.IsValid` helper mirrors the same validator used by [`compendium-adapter-pgvector`](https://github.com/sassy-solutions/compendium-adapter-pgvector) and [`compendium-adapter-postgresql`](https://github.com/sassy-solutions/compendium-adapter-postgresql) — defence-in-depth against tenant-id-driven injection.
+
+## Distance metrics
+
+| `DistanceMetric` | Qdrant `Distance` label |
+|---|---|
+| `Cosine` | `Cosine` |
+| `L2` | `Euclid` |
+| `InnerProduct` | `Dot` |
+
+The metric is fixed at `EnsureCollectionAsync` time. Trying to recreate an existing collection with a different size or distance returns a `VectorStore.DimensionMismatch` / `Qdrant.MetricMismatch` failure.
+
+## Self-hosted vs Qdrant Cloud
+
+| Aspect | Self-hosted | Qdrant Cloud |
+|---|---|---|
+| `BaseUrl` | `http://localhost:6333` (default) | `https://xxxxx.eu-west.aws.cloud.qdrant.io:6333` |
+| `ApiKey` | optional (none in dev) | **required** |
+| TLS | recommended once you leave loopback | enforced |
+| Multi-region | manage manually | built into the cluster |
+
+The same adapter binary serves both — only configuration changes.
+
+## Production checklist
+
+- **TLS / API-key rotation** — never check the api key into source. Rotate via your secret store (we read it via `IOptions<QdrantOptions>`, so any provider works).
+- **HNSW tuning** — `HnswM=16` and `HnswEfConstruct=128` are sensible defaults for most RAG workloads. Larger `m` boosts recall at the cost of memory and build time; larger `ef_construct` boosts recall at the cost of build time only.
+- **Dimensions per model** — pick the dimension once: changing it requires recreating the collection. Common values: 384 (e5-small, bge-small), 768 (e5-base, sentence-transformers), 1024 (Cohere embed v3), 1536 (OpenAI text-embedding-3-small), 3072 (OpenAI text-embedding-3-large).
+- **Sharding** — Qdrant supports sharding inside a cluster; the adapter is transparent to it. Plan capacity around your largest collection's point count + vector dimension × 4 bytes.
+- **Backups** — Qdrant ships snapshot APIs; use them on a schedule. The adapter does not expose snapshot helpers (yet).
+- **Multi-tenancy** — prefer payload-based tenancy (default). For very large workloads with strict isolation requirements, deploy per-tenant collections and route via separate `QdrantOptions` instances.
+- **Pooled `HttpClient`** — the DI extension registers `QdrantVectorStore` via `IHttpClientFactory`, so HTTP connections are pooled across requests by default.
+
+## Versioning
+
+This package is published as `Compendium.Adapters.Qdrant`. Versions are driven by git tags via [MinVer](https://github.com/adamralph/minver) — see [`docs/RELEASE.md`](docs/RELEASE.md). The release tag is set by the orchestrator after merge to `main`.
+
+## Repository conventions
 
 | Aspect | Choice |
 |---|---|
-| Test framework | xUnit 2.9.3 |
-| Assertions | FluentAssertions 6.12.1 — never `Assert.*` |
-| Mocks | NSubstitute 5.1.0 — never Moq |
-| Coverage | coverlet.collector 6.0.2 + ReportGenerator (local tool) |
-| Result pattern | `Result<T>` from `Compendium.Abstractions` (NuGet) |
-| Async | `async Task` + cancellation tokens — never `Thread.Sleep`, never `.Result` |
-| Test naming | `{SUT}Tests` / `{Method}_{Scenario}_{Expected}` |
-| Test layout | AAA explicit (`// Arrange / // Act / // Assert`) |
-| File header | Sassy Solutions copyright block |
-| HTTP mocking (when applicable) | `RichardSzalay.MockHttp` 7.0.0 |
-| Container fixtures (integration) | `Testcontainers` 4.11.0 + `IAsyncLifetime` + `[RequiresDockerFact]` |
-| CI gate | ≥ 90 % line coverage on the unit-testable surface (DB-bound types may be exempted with documented reason) |
+| Target | .NET 9, C# 13 |
+| HTTP | Hand-rolled `HttpClient` + `System.Text.Json` (snake_case naming policy) |
+| Test framework | xUnit 2.9.3 + FluentAssertions 6.12.1 + NSubstitute 5.1.0 |
+| HTTP mocking | [`RichardSzalay.MockHttp`](https://github.com/richardszalay/mockhttp) 7.0.0 |
+| Integration tests | [Testcontainers](https://dotnet.testcontainers.org) 4.11.0 with `qdrant/qdrant:latest` |
+| Coverage gate | ≥ 90 % line coverage on the unit-testable surface; integration suite covers wire-bound paths |
+| Result pattern | `Result<T>` from `Compendium.Core` |
 
-## How to scaffold a new adapter
+## Build & test locally
 
 ```bash
-# 1. Pick a vendor name (use PascalCase: Stripe, PostgreSQL, Redis…)
-export VENDOR=Stripe
+# Unit tests — no Docker required.
+dotnet test --filter "FullyQualifiedName!~IntegrationTests"
 
-# 2. Copy the template to a new directory next to your Compendium clone
-cp -r templates/adapter-dotnet ../compendium-adapter-${VENDOR,,}
-cd ../compendium-adapter-${VENDOR,,}
-
-# 3. Find-and-replace placeholders (BSD sed on macOS — adapt for GNU sed)
-find . -type f \( -name '*.cs' -o -name '*.csproj' -o -name '*.sln' -o -name '*.md' -o -name '*.yml' -o -name '*.json' -o -name '*.props' \) -exec sed -i '' -e "s/Qdrant/${VENDOR}/g" -e "s/qdrant/${VENDOR,,}/g" {} +
-
-# 4. Rename folders/files
-git mv src/Compendium.Adapters.Qdrant              src/Compendium.Adapters.${VENDOR}
-git mv src/Compendium.Adapters.${VENDOR}/Compendium.Adapters.Qdrant.csproj \
-       src/Compendium.Adapters.${VENDOR}/Compendium.Adapters.${VENDOR}.csproj
-git mv src/Compendium.Adapters.${VENDOR}/QdrantAdapter.cs                   \
-       src/Compendium.Adapters.${VENDOR}/${VENDOR}Adapter.cs
-git mv src/Compendium.Adapters.${VENDOR}/Options/QdrantOptions.cs           \
-       src/Compendium.Adapters.${VENDOR}/Options/${VENDOR}Options.cs
-
-git mv tests/Unit/Compendium.Adapters.Qdrant.Tests           tests/Unit/Compendium.Adapters.${VENDOR}.Tests
-git mv tests/Unit/Compendium.Adapters.${VENDOR}.Tests/Compendium.Adapters.Qdrant.Tests.csproj \
-       tests/Unit/Compendium.Adapters.${VENDOR}.Tests/Compendium.Adapters.${VENDOR}.Tests.csproj
-git mv tests/Unit/Compendium.Adapters.${VENDOR}.Tests/Options/QdrantOptionsTests.cs \
-       tests/Unit/Compendium.Adapters.${VENDOR}.Tests/Options/${VENDOR}OptionsTests.cs
-
-mv Compendium.Adapters.Qdrant.sln Compendium.Adapters.${VENDOR}.sln
-
-# 5. Initialise git and verify build
-git init
-git add .
-dotnet build -c Release
-dotnet test  -c Release
+# Integration tests — Docker must be running (Testcontainers pulls qdrant/qdrant:latest).
+dotnet test --filter "FullyQualifiedName~IntegrationTests"
 ```
 
-## What you still need to do per repo
-
-After scaffolding :
-
-- **Author the actual adapter code.** Replace `QdrantAdapter` with the real implementation of whatever port (`IEventStore`, `IIdentityProvider`, `IBillingProvider`, `IEmailSender`, …) you're filling.
-- **NuGet publishing.** Add `NUGET_API_KEY` to repo secrets ; the included `release.yml` (TODO — add when first needed) packs and pushes on `v*` tags.
-- **Branch protection.** Require `build-test` (CI), at least one review, no force-push to `main`.
-- **Renovate or Dependabot.** Renovate config at `renovate.json` — track Compendium NuGets so a framework release auto-PRs the adapter. Dependabot for npm-style scheduled dep bumps.
-- **Integration tests** (optional but recommended for adapters with external systems). Add `tests/Integration/Compendium.Adapters.<Vendor>.IntegrationTests/` with `Testcontainers` if needed. Keep them out of the unit CI job.
-
-## Local-dev mode (when you're modifying both framework and adapter)
-
-Edit `Directory.Packages.props` to add a project reference instead of the NuGet :
-
-```xml
-<ItemGroup Condition="'$(LinkLocalCompendium)' == 'true'">
-  <PackageReference Remove="Compendium.Abstractions" />
-  <ProjectReference Include="../compendium/src/Abstractions/Compendium.Abstractions/Compendium.Abstractions.csproj" />
-</ItemGroup>
-```
-
-Then `dotnet build -p:LinkLocalCompendium=true`.
-
-## Common pitfalls (read before pushing)
-
-- **Broken `Compendium.sln`** : every `Project("{...}")` MUST have a matching `EndProject` on the next non-empty line, and every GUID listed in `Project(...)` MUST appear in the `GlobalSection(ProjectConfigurationPlatforms)` (4 `.Debug|Any CPU.*` + `.Release|Any CPU.*` lines). Linux CI is strict ; macOS is lenient and will mask this bug. **Always** use `dotnet sln add` / `dotnet sln remove` instead of hand-editing the sln. Verify with `dotnet sln list && dotnet build -c Release` before pushing.
-- **`gh pr merge` from a detached worktree** : fails opaquely with "could not determine current branch". Always run merges from a checkout that's on a named branch (typically `main`).
-- **MinVer tag prefix** : pinned to `v` in `Directory.Build.props`. The first tag must continue the version sequence of the package's previous releases (e.g. if `Compendium.Adapters.Stripe` was last published as `1.0.0-preview.8` from the framework, the first tag here is `v1.0.0-preview.9`).
-- **No `--no-verify`, no `--force-push`** (use `--force-with-lease` instead). No version bumps in `Directory.Packages.props` outside of Renovate-managed PRs.
-- **Skill / commands** : `.claude/skills/compendium-test-author/SKILL.md` and `.claude/commands/{tests,coverage}.md` ship pre-baked. `/tests` and `/coverage` work out of the box in Claude Code.
+The integration suite covers behaviour that can only be observed against a live Qdrant backend: collection creation, idempotent ensure, dimension-mismatch detection, upsert/search/delete round-trip, tenant isolation, and collection-not-found behaviour. Skips cleanly when Docker is unavailable via `[RequiresDockerFact]`.
 
 ## License
 
-MIT — same as Compendium itself.
+[MIT](LICENSE) — Copyright © 2026 Sassy Solutions.
