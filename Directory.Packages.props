@@ -47,6 +47,6 @@
 
   <!-- Container fixtures for integration tests. -->
   <ItemGroup>
-    <PackageVersion Include="Testcontainers" Version="4.11.0" />
+    <PackageVersion Include="Testcontainers" Version="4.12.0" />
   </ItemGroup>
 </Project>
